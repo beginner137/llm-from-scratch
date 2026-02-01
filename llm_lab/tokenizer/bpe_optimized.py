@@ -460,7 +460,9 @@ if __name__ == "__main__":
     parser.add_argument("--num-processes", type=int, default=None)
     parser.add_argument("--no-numba", action="store_true")
     parser.add_argument("--no-mmap", action="store_true")
-    parser.add_argument("--output", help="Output path for vocab/merges")
+    parser.add_argument("--output", help="Output path for pickle containing vocab+merges")
+    parser.add_argument("--output-vocab", help="Output path for vocab (json: id -> hex)")
+    parser.add_argument("--output-merges", help="Output path for merges (txt: hex1<SPACE>hex2)")
 
     args = parser.parse_args()
 
@@ -481,4 +483,17 @@ if __name__ == "__main__":
         import pickle
         with open(args.output, "wb") as f:
             pickle.dump({"vocab": vocab, "merges": merges}, f)
-        print(f"Saved to {args.output}")
+        print(f"Saved pickle to {args.output}")
+
+    if args.output_vocab:
+        import json
+        vocab_json = {str(token_id): token_bytes.hex() for token_id, token_bytes in vocab.items()}
+        with open(args.output_vocab, "w", encoding="utf-8") as f:
+            json.dump(vocab_json, f, ensure_ascii=True, indent=2, sort_keys=True)
+        print(f"Saved vocab to {args.output_vocab}")
+
+    if args.output_merges:
+        with open(args.output_merges, "w", encoding="utf-8") as f:
+            for b1, b2 in merges:
+                f.write(f\"{b1.hex()} {b2.hex()}\\n\")
+        print(f"Saved merges to {args.output_merges}")

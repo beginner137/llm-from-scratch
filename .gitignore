@@ -162,3 +162,7 @@ cython_debug/
 #.idea/
 
 .ruff_cache/
+
+# Local datasets
+data/
+llm_lab/data/
