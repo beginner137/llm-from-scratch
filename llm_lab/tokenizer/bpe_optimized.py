@@ -495,5 +495,5 @@ if __name__ == "__main__":
     if args.output_merges:
         with open(args.output_merges, "w", encoding="utf-8") as f:
             for b1, b2 in merges:
-                f.write(f\"{b1.hex()} {b2.hex()}\\n\")
+                f.write(f"{b1.hex()} {b2.hex()}\n")
         print(f"Saved merges to {args.output_merges}")

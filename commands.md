@@ -18,9 +18,21 @@ cd ../..
 
 ### Train TinyStories BPE 
 ```
-uv run python -m llm_lab.tokenizer.bpe_optimized llm_lab/data/TinyStoriesV2-GPT4-train.txt \
+caffeinate -s uv run python -m llm_lab.tokenizer.bpe_optimized llm_lab/data/TinyStoriesV2-GPT4-train.txt \
   --output outputs/tinystories_bpe.pkl \
   --output-vocab outputs/tinystories_vocab.json \
   --output-merges outputs/tinystories_merges.txt \
-  --max-memory-gb 3.0
+  --max-memory-gb 3.0 \
+  --vocab-size 10000
+```
+
+
+### Train OpenWebText BPE
+```
+caffeinate -s uv run python -m llm_lab.tokenizer.bpe_optimized llm_lab/data/owt_train.txt \
+  --output llm_lab/outputs/owt_bpe.pkl \
+  --output-vocab llm_lab/outputs/owt_vocab.json \
+  --output-merges llm_lab/outputs/owt_merges.txt \
+  --max-memory-gb 12.0 \
+  --vocab-size 32000
 ```

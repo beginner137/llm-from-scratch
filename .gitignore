@@ -166,3 +166,7 @@ cython_debug/
 # Local datasets
 data/
 llm_lab/data/
+
+# Local outputs
+outputs/
+llm_lab/outputs/
