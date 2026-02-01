@@ -1,10 +1,9 @@
-# CS336 Spring 2025 Assignment 1: Basics
+# LLM From Scratch (Adapted from CS336)
 
-For a full description of the assignment, see the assignment handout at
-[cs336_spring2025_assignment1_basics.pdf](./cs336_spring2025_assignment1_basics.pdf)
-
-If you see any issues with the assignment handout or code, please feel free to
-raise a GitHub issue or open a pull request with a fix.
+This repo follows Stanford CS336 (Spring 2025) Assignment 1: Basics as a starting
+point, and is evolving into a personal “LLM from scratch” implementation.
+The original assignment materials and structure are preserved where helpful, with
+custom modifications added over time.
 
 ## Setup
 
@@ -47,4 +46,3 @@ gunzip owt_valid.txt.gz
 
 cd ..
 ```
-
