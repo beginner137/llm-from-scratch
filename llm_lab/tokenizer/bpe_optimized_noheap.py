@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict, BinaryIO
 import os
 import mmap
-import heapq
 import multiprocessing as mp
 from multiprocessing import get_context
 import functools
@@ -372,38 +371,8 @@ def train_bpe(
         print(f"Initial pairs: {len(pair_counts):,}")
 
     # ==========================================================================
-    # PHASE 4: BPE merge loop (heap-based best-pair selection)
+    # PHASE 4: BPE merge loop (non-heap baseline)
     # ==========================================================================
-
-    # Indexed priority queue by count:
-    # - max count is tracked in a heap of counts (with lazy invalidation)
-    # - ties are resolved by lexicographic max on token bytes (reference behavior)
-    count_heap: List[int] = []
-    count_to_pairs: Dict[int, set] = defaultdict(set)
-
-    for pair, count in pair_counts.items():
-        if count > 0:
-            count_to_pairs[count].add(pair)
-
-    for count in count_to_pairs.keys():
-        heapq.heappush(count_heap, -count)
-
-    def set_pair_count(pair: Tuple[int, int], new_count: int) -> None:
-        """Update pair count and indexed count buckets in O(log n)."""
-        old_count = pair_counts.get(pair, 0)
-        if old_count > 0:
-            bucket = count_to_pairs.get(old_count)
-            if bucket is not None:
-                bucket.discard(pair)
-                if not bucket:
-                    del count_to_pairs[old_count]
-
-        if new_count > 0:
-            pair_counts[pair] = new_count
-            count_to_pairs[new_count].add(pair)
-            heapq.heappush(count_heap, -new_count)
-        else:
-            pair_counts.pop(pair, None)
 
     merge_order: List[Tuple[bytes, bytes]] = []
     next_id = len(vocab)
@@ -414,23 +383,16 @@ def train_bpe(
         merge_iter = tqdm(merge_iter, desc="BPE Merges")
 
     for _ in merge_iter:
-        if not count_heap:
+        if not pair_counts:
             if config.show_progress:
                 print("No more pairs to merge")
             break
 
-        while count_heap and (-count_heap[0]) not in count_to_pairs:
-            heapq.heappop(count_heap)
-
-        if not count_heap:
-            if config.show_progress:
-                print("No more pairs to merge")
-            break
-
-        best_count = -count_heap[0]
+        # Find best pair by full scan:
+        # max frequency first, then lexicographic token bytes.
         best_pair = max(
-            count_to_pairs[best_count],
-            key=lambda p: (vocab[p[0]], vocab[p[1]])
+            pair_counts.keys(),
+            key=lambda p: (pair_counts[p], vocab[p[0]], vocab[p[1]])
         )
 
         # Create new token
@@ -449,7 +411,9 @@ def train_bpe(
             # Remove old pair counts
             old_pairs = list(zip(word_list, word_list[1:]))
             for pair in old_pairs:
-                set_pair_count(pair, pair_counts.get(pair, 0) - freq)
+                pair_counts[pair] -= freq
+                if pair_counts[pair] <= 0:
+                    del pair_counts[pair]
                 pair_to_word_indices[pair].discard(wi)
                 if not pair_to_word_indices[pair]:
                     del pair_to_word_indices[pair]
@@ -460,7 +424,7 @@ def train_bpe(
             # Add new pair counts
             new_pairs = list(zip(word_list, word_list[1:]))
             for pair in new_pairs:
-                set_pair_count(pair, pair_counts.get(pair, 0) + freq)
+                pair_counts[pair] += freq
                 pair_to_word_indices[pair].add(wi)
 
     if config.show_progress:

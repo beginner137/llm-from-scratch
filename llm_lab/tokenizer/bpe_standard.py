@@ -1,7 +1,9 @@
-import regex as re
 from collections import defaultdict
 from typing import List
 
+import regex as re
+
+from .utils import pre_tokenize_into_words
 
 def merge(indices: list[int], pair: tuple[int, int], new_index: int) -> list[int]:
     new_indices = []
@@ -14,16 +16,6 @@ def merge(indices: list[int], pair: tuple[int, int], new_index: int) -> list[int
             new_indices.append(indices[i])
             i += 1
     return new_indices
-
-
-def pre_tokenize_into_words(string: str) -> List[List[int]]:
-    PAT = re.compile(
-        r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    )
-    words_as_byte_lists = []
-    for m in PAT.finditer(string):
-        words_as_byte_lists.append(list(m.group(0).encode("utf-8")))
-    return words_as_byte_lists
 
 
 def train_bpe(input_path, vocab_size, special_tokens):

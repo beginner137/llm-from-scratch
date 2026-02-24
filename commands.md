@@ -33,6 +33,6 @@ caffeinate -s uv run python -m llm_lab.tokenizer.bpe_optimized llm_lab/data/owt_
   --output llm_lab/outputs/owt_bpe.pkl \
   --output-vocab llm_lab/outputs/owt_vocab.json \
   --output-merges llm_lab/outputs/owt_merges.txt \
-  --max-memory-gb 12.0 \
+  --max-memory-gb 8.0 \
   --vocab-size 32000
 ```
