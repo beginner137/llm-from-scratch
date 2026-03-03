@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from functools import lru_cache
+import heapq
 import json
 from typing import Dict, List, Tuple
 
@@ -18,10 +19,12 @@ class Tokenizer:
         special_tokens: List[str] | None = None,
     ) -> None:
         self.vocab = vocab
-        self._token_to_id = {token: token_id for token_id, token in vocab.items()}
+        self._token_to_id = {
+            token: token_id for token_id, token in vocab.items()}
         self._bpe_ranks = {pair: i for i, pair in enumerate(merges)}
         self._special_tokens = special_tokens or []
-        self._special_token_bytes = {tok: tok.encode("utf-8") for tok in self._special_tokens}
+        self._special_token_bytes = {tok: tok.encode(
+            "utf-8") for tok in self._special_tokens}
 
         if self._special_tokens:
             ordered = sorted(self._special_tokens, key=len, reverse=True)
@@ -48,7 +51,8 @@ class Tokenizer:
             elif isinstance(token_val, str):
                 token_bytes = token_val.encode("utf-8")
             else:
-                raise ValueError(f"Unsupported vocab value type: {type(token_val)}")
+                raise ValueError(
+                    f"Unsupported vocab value type: {type(token_val)}")
             vocab[token_id] = token_bytes
 
         merges: List[Tuple[bytes, bytes]] = []
@@ -104,7 +108,9 @@ class Tokenizer:
         if not ids:
             return ""
         pieces = [self.vocab[token_id] for token_id in ids]
-        return b"".join(pieces).decode("utf-8", errors="strict")
+        # Individual byte-level BPE tokens may contain partial UTF-8 sequences.
+        # Use replacement mode for robust per-token decoding.
+        return b"".join(pieces).decode("utf-8", errors="replace")
 
     def _split_by_special_tokens(self, text: str) -> Iterator[Tuple[str, str]]:
         if not self._special_regex:
@@ -126,34 +132,84 @@ class Tokenizer:
         if len(token_bytes) <= 1:
             return (token_bytes,)
 
-        word: List[bytes] = [bytes([b]) for b in token_bytes]
-        while True:
-            best_pair = None
-            best_rank = None
-            for i in range(len(word) - 1):
-                pair = (word[i], word[i + 1])
-                rank = self._bpe_ranks.get(pair)
-                if rank is None:
-                    continue
-                if best_rank is None or rank < best_rank:
-                    best_rank = rank
-                    best_pair = pair
+        # Linked-list representation of the current token sequence.
+        symbols: List[bytes] = [bytes([b]) for b in token_bytes]
+        n = len(symbols)
+        prev = [-1] + list(range(n - 1))
+        nxt = list(range(1, n)) + [-1]
+        alive = [True] * n
 
-            if best_pair is None:
+        # Min-heap of candidate merges: (rank, left_node_index, version).
+        # `version[left]` invalidates stale heap entries after local updates.
+        version = [0] * n
+        heap: List[Tuple[int, int, int]] = []
+
+        def refresh_pair(left: int) -> None:
+            if left < 0 or not alive[left]:
+                return
+            version[left] += 1
+            right = nxt[left]
+            if right == -1 or not alive[right]:
+                return
+            rank = self._bpe_ranks.get((symbols[left], symbols[right]))
+            if rank is not None:
+                heapq.heappush(heap, (rank, left, version[left]))
+
+        for left in range(n - 1):
+            refresh_pair(left)
+
+        head = 0
+        while heap:
+            selected_pair: Tuple[bytes, bytes] | None = None
+            while heap:
+                rank, left, seen_version = heapq.heappop(heap)
+                if not alive[left] or seen_version != version[left]:
+                    continue
+                right = nxt[left]
+                if right == -1 or not alive[right]:
+                    continue
+                pair = (symbols[left], symbols[right])
+                current_rank = self._bpe_ranks.get(pair)
+                if current_rank is None or current_rank != rank:
+                    continue
+                selected_pair = pair
                 break
 
-            new_word: List[bytes] = []
-            i = 0
-            while i < len(word):
-                if i + 1 < len(word) and word[i] == best_pair[0] and word[i + 1] == best_pair[1]:
-                    new_word.append(word[i] + word[i + 1])
-                    i += 2
-                else:
-                    new_word.append(word[i])
-                    i += 1
-            word = new_word
+            if selected_pair is None:
+                break
 
-        return tuple(word)
+            a, b = selected_pair
+            cur = head
+            while cur != -1:
+                right = nxt[cur]
+                if (
+                    right != -1
+                    and alive[cur]
+                    and alive[right]
+                    and symbols[cur] == a
+                    and symbols[right] == b
+                ):
+                    # Merge right into cur, then update only affected adjacent pairs.
+                    symbols[cur] = symbols[cur] + symbols[right]
+                    alive[right] = False
+                    nxt[cur] = nxt[right]
+                    if nxt[right] != -1:
+                        prev[nxt[right]] = cur
+
+                    refresh_pair(prev[cur])
+                    refresh_pair(cur)
+                    # Skip the merged token to keep merges non-overlapping.
+                    cur = nxt[cur]
+                else:
+                    cur = right
+
+        result: List[bytes] = []
+        cur = head
+        while cur != -1:
+            if alive[cur]:
+                result.append(symbols[cur])
+            cur = nxt[cur]
+        return tuple(result)
 
 
 def _looks_like_hex(value: str) -> bool:
