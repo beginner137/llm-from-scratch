@@ -28,8 +28,22 @@ def run_linear(
     Returns:
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
+    from llm_lab.model.layers import Linear
 
-    raise NotImplementedError
+    layer = Linear(
+        in_features=d_in,
+        out_features=d_out,
+        device=in_features.device,
+        dtype=in_features.dtype,
+    )
+    layer = layer.to(device=in_features.device, dtype=in_features.dtype)
+
+    with torch.no_grad():
+        layer.weight.copy_(weights.to(device=in_features.device, dtype=in_features.dtype))
+        if getattr(layer, "bias", None) is not None:
+            layer.bias.zero_()
+
+    return layer(in_features)
 
 
 def run_embedding(
