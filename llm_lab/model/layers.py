@@ -19,9 +19,38 @@ class Linear(nn.Module):
         """
         weight = torch.empty(out_features, in_features,
                              device=device, dtype=dtype)
-        # self.bias = torch.zeros(out_features, device=device, dtype=dtype)
         self.weight = nn.Parameter(nn.init.trunc_normal_(
             weight, mean=0, std=sigma, a=-3*sigma, b=3*sigma))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.matmul(x, self.weight.T)
+
+
+class Embedding(nn.Module):
+    def __init__(self, num_embeddings, embedding_dim, device=None, dtype=None):
+        super().__init__()
+        sigma = 1
+        embedding = torch.empty(
+            num_embeddings, embedding_dim, device=None, dtype=None)
+        self.embedding = nn.Parameter(nn.init.trunc_normal_(
+            embedding, mean=0, std=sigma, a=-3, b=3
+        ))
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        return self.embedding[token_ids]
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model: int, eps: float = 1e-5, device=None, dtype=None):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(
+            torch.ones(d_model, device=device, dtype=dtype)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        in_dtype = x.dtype
+        x = x.to(torch.float32)
+        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        result = x / rms * self.weight
+        return result.to(in_dtype)

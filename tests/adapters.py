@@ -36,12 +36,10 @@ def run_linear(
         device=in_features.device,
         dtype=in_features.dtype,
     )
-    layer = layer.to(device=in_features.device, dtype=in_features.dtype)
 
-    with torch.no_grad():
-        layer.weight.copy_(weights.to(device=in_features.device, dtype=in_features.dtype))
-        if getattr(layer, "bias", None) is not None:
-            layer.bias.zero_()
+    layer.load_state_dict({
+        "weight": weights.to(device=in_features.device, dtype=in_features.dtype)
+    })
 
     return layer(in_features)
 
@@ -64,8 +62,13 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    from llm_lab.model.layers import Embedding
+    embedding = Embedding(vocab_size, d_model,
+                          device=weights.device, dtype=weights.dtype)
+    embedding.load_state_dict({
+        "embedding": weights.to(device=weights.device, dtype=weights.dtype)
+    })
+    return embedding(token_ids)
 
 
 def run_swiglu(
@@ -392,7 +395,14 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    from llm_lab.model.layers import RMSNorm
+    rms_norm = RMSNorm(d_model, eps, device=weights.device,
+                       dtype=weights.dtype)
+
+    rms_norm.load_state_dict({
+        "weight": weights.to(device=in_features.device, dtype=in_features.dtype)
+    })
+    return rms_norm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
