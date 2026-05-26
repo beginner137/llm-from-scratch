@@ -94,3 +94,9 @@ class RotaryPositionalEmbedding(nn.Module):
         out[..., 0::2] = x_even_rot
         out[..., 1::2] = x_odd_rot
         return out
+
+
+def softmax(x: torch.Tensor, dim: int):
+    shifted = x - x.max(dim=dim, keepdim=True).values
+    exp = torch.exp(shifted)
+    return exp / exp.sum(dim=dim, keepdim=True)
