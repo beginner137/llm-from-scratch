@@ -100,3 +100,11 @@ def softmax(x: torch.Tensor, dim: int):
     shifted = x - x.max(dim=dim, keepdim=True).values
     exp = torch.exp(shifted)
     return exp / exp.sum(dim=dim, keepdim=True)
+
+
+def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    scores = Q @ (K.transpose(-2, -1)) / math.sqrt(Q.shape[-1])
+    if mask is not None:
+        scores = scores.masked_fill(~mask, float("-inf"))
+    attn = softmax(scores, dim=-1)
+    return attn @ V
