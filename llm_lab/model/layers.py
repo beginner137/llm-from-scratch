@@ -111,11 +111,16 @@ def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tens
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model: int, num_heads: int, device=None, dtype=None):
+    def __init__(self, d_model: int, num_heads: int, device=None, dtype=None, with_rope=True, theta=None, max_seq_len=2048, token_positions=None):
         super().__init__()
         self.num_heads = num_heads
         self.d_model = d_model
         self.d_k = self.d_v = d_model // num_heads
+        self.with_rope = with_rope
+        if with_rope:
+            self.rope = RotaryPositionalEmbedding(
+                theta, self.d_k, max_seq_len, device=device)
+            self.token_positions = token_positions
         self.q_proj_weight = Linear(
             d_model, num_heads * self.d_k, device=device, dtype=dtype)
         self.k_proj_weight = Linear(
@@ -140,6 +145,11 @@ class MultiHeadAttention(nn.Module):
         Q = Q.transpose(-2, -3)
         K = K.transpose(-2, -3)
         V = V.transpose(-2, -3)
+
+        # Apply Rope to Q and K
+        if self.with_rope:
+            Q = self.rope(Q, self.token_positions)
+            K = self.rope(K, self.token_positions)
 
         # create a lower triangle mask
         causal_mask = torch.tril(torch.ones(
