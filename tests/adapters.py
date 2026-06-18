@@ -419,7 +419,43 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from llm_lab.model.layers import TransformerLM
+
+    transformer_lm = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+        device=in_indices.device,
+        dtype=weights["token_embeddings.weight"].dtype,
+    )
+
+    state_dict = {
+        "embedding.embedding": weights["token_embeddings.weight"],
+        "ln_final.weight": weights["ln_final.weight"],
+        "lm_head.weight": weights["lm_head.weight"],
+    }
+
+    for layer_idx in range(num_layers):
+        ref_prefix = f"layers.{layer_idx}"
+        local_prefix = f"layers.{layer_idx}"
+        state_dict.update({
+            f"{local_prefix}.ln1.weight": weights[f"{ref_prefix}.ln1.weight"],
+            f"{local_prefix}.attn.q_proj_weight.weight": weights[f"{ref_prefix}.attn.q_proj.weight"],
+            f"{local_prefix}.attn.k_proj_weight.weight": weights[f"{ref_prefix}.attn.k_proj.weight"],
+            f"{local_prefix}.attn.v_proj_weight.weight": weights[f"{ref_prefix}.attn.v_proj.weight"],
+            f"{local_prefix}.attn.o_proj_weight.weight": weights[f"{ref_prefix}.attn.output_proj.weight"],
+            f"{local_prefix}.ln2.weight": weights[f"{ref_prefix}.ln2.weight"],
+            f"{local_prefix}.ffn.w1_weight.weight": weights[f"{ref_prefix}.ffn.w1.weight"],
+            f"{local_prefix}.ffn.w2_weight.weight": weights[f"{ref_prefix}.ffn.w2.weight"],
+            f"{local_prefix}.ffn.w3_weight.weight": weights[f"{ref_prefix}.ffn.w3.weight"],
+        })
+
+    transformer_lm.load_state_dict(state_dict)
+    return transformer_lm(in_indices)
 
 
 def run_rmsnorm(

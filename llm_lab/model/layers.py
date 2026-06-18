@@ -193,3 +193,38 @@ class TransformerBlock(nn.Module):
         x5 = self.ffn(x4)
         # residual
         return x3 + x5
+
+
+class TransformerLM(nn.Module):
+    def __init__(self, vocab_size, context_length, d_model: int, num_layers: int, num_heads: int, d_ff: int, rope_theta: float, device=None, dtype=None):
+        super().__init__()
+        self.embedding = Embedding(
+            vocab_size, d_model, device=device, dtype=dtype)
+        self.layers = nn.ModuleList([
+            TransformerBlock(
+                d_model=d_model,
+                num_heads=num_heads,
+                d_ff=d_ff,
+                max_seq_len=context_length,
+                theta=rope_theta,
+                device=device,
+                dtype=dtype
+            )
+            for _ in range(num_layers)
+        ])
+        self.ln_final = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
+
+    def forward(self, in_indices) -> torch.Tensor:
+        # (batch_size, sequence_length, d_model)
+        x = self.embedding(in_indices)
+
+        for layer in self.layers:
+            x = layer(x)
+
+        x = self.ln_final(x)
+
+        # (..., sequence_length, d_model) -> (..., sequence_length, vocab_size)
+        #  finding which token vector is most aligned with this hidden vector using dot
+        x = self.lm_head(x)
+        return x
