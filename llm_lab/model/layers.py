@@ -172,5 +172,24 @@ class MultiHeadAttention(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int, theta, device=None, dtype=None):
         super().__init__()
+        self.ln1 = RMSNorm(d_model=d_model, device=device, dtype=dtype)
         self.attn = MultiHeadAttention(d_model, num_heads, device=device,
                                        dtype=dtype, with_rope=True, theta=theta, max_seq_len=max_seq_len)
+        self.ln2 = RMSNorm(d_model=d_model, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model=d_model, d_ff=d_ff,
+                          device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # pass RMSNorm
+        x1 = self.ln1(x)
+        # pass Attention
+        x2 = self.attn(x1)
+        # residual
+        x3 = x + x2
+
+        # RMSNorm
+        x4 = self.ln2(x3)
+        # pass FFN
+        x5 = self.ffn(x4)
+        # residual
+        return x3 + x5

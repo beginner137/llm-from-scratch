@@ -217,7 +217,7 @@ def run_multihead_self_attention_with_rope(
     """
     from llm_lab.model.layers import MultiHeadAttention
     multi_head_attn = MultiHeadAttention(
-        d_model, num_heads, device=in_features.device, dtype=in_features.dtype, with_rope=True, theta=theta, max_seq_len=max_seq_len, token_positions=None)
+        d_model, num_heads, device=in_features.device, dtype=in_features.dtype, with_rope=True, theta=theta, max_seq_len=max_seq_len, token_positions=token_positions)
     multi_head_attn.load_state_dict({
         "q_proj_weight.weight": q_proj_weight,
         "k_proj_weight.weight": k_proj_weight,
@@ -322,7 +322,22 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    from llm_lab.model.layers import TransformerBlock
+    transformer_block = TransformerBlock(d_model=d_model, num_heads=num_heads, d_ff=d_ff,
+                                         max_seq_len=max_seq_len, theta=theta, device=in_features.device, dtype=in_features.dtype)
+    transformer_block.load_state_dict({
+        "ln1.weight": weights["ln1.weight"],
+        "attn.q_proj_weight.weight": weights["attn.q_proj.weight"],
+        "attn.k_proj_weight.weight": weights["attn.k_proj.weight"],
+        "attn.v_proj_weight.weight": weights["attn.v_proj.weight"],
+        "attn.o_proj_weight.weight": weights["attn.output_proj.weight"],
+        "ln2.weight": weights["ln2.weight"],
+        "ffn.w1_weight.weight": weights["ffn.w1.weight"],
+        "ffn.w2_weight.weight": weights["ffn.w2.weight"],
+        "ffn.w3_weight.weight": weights["ffn.w3.weight"],
+    })
+
+    return transformer_block(in_features)
 
 
 def run_transformer_lm(
