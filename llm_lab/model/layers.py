@@ -108,3 +108,48 @@ def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tens
         scores = scores.masked_fill(~mask, float("-inf"))
     attn = softmax(scores, dim=-1)
     return attn @ V
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model: int, num_heads: int, device=None, dtype=None):
+        super().__init__()
+        self.num_heads = num_heads
+        self.d_model = d_model
+        self.d_k = self.d_v = d_model // num_heads
+        self.q_proj_weight = Linear(
+            d_model, num_heads * self.d_k, device=device, dtype=dtype)
+        self.k_proj_weight = Linear(
+            d_model, num_heads * self.d_k, device=device, dtype=dtype)
+        self.v_proj_weight = Linear(
+            d_model, num_heads * self.d_v, device=device, dtype=dtype)
+        self.o_proj_weight = Linear(
+            num_heads * self.d_v, d_model, device=device, dtype=dtype)
+
+    def forward(self, in_features: torch.Tensor) -> torch.Tensor:
+        sequence_length = in_features.shape[-2]
+        Q = self.q_proj_weight(in_features)  # (..., sequence_length, d_model)
+        K = self.k_proj_weight(in_features)
+        V = self.v_proj_weight(in_features)
+
+        # reshape to (..., sequence_length, num_heads, head_dim)
+        Q = Q.reshape(*Q.shape[:-1], self.num_heads, self.d_k)
+        K = K.reshape(*K.shape[:-1], self.num_heads, self.d_k)
+        V = V.reshape(*V.shape[:-1], self.num_heads, self.d_v)
+
+        # swap dimension to (..., num_heads, sequence_length, head_dim)
+        Q = Q.transpose(-2, -3)
+        K = K.transpose(-2, -3)
+        V = V.transpose(-2, -3)
+
+        # create a lower triangle mask
+        causal_mask = torch.tril(torch.ones(
+            sequence_length, sequence_length), diagonal=0).bool()
+
+        # (..., num_heads, sequence_length, d_v)
+        O = scaled_dot_product_attention(Q, K, V, causal_mask)
+
+        # change to (..., sequence_length, d_v*num_heads)
+        O = O.transpose(-2, -3)  # (..., sequence_length,num_heads, d_v)
+        O = O.flatten(start_dim=-2)  # (..., sequence_length, d_v*num_heads)
+
+        return self.o_proj_weight(O)  # (..., sequence_length, d_model)
