@@ -217,7 +217,7 @@ def run_multihead_self_attention_with_rope(
     """
     from llm_lab.model.layers import MultiHeadAttention
     multi_head_attn = MultiHeadAttention(
-        d_model, num_heads, device=in_features.device, dtype=in_features.dtype, with_rope=True, theta=theta, max_seq_len=max_seq_len, token_positions=token_positions)
+        d_model, num_heads, device=in_features.device, dtype=in_features.dtype, with_rope=True, theta=theta, max_seq_len=max_seq_len, token_positions=None)
     multi_head_attn.load_state_dict({
         "q_proj_weight.weight": q_proj_weight,
         "k_proj_weight.weight": k_proj_weight,

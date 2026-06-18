@@ -117,10 +117,11 @@ class MultiHeadAttention(nn.Module):
         self.d_model = d_model
         self.d_k = self.d_v = d_model // num_heads
         self.with_rope = with_rope
+        self.token_positions = token_positions
+
         if with_rope:
             self.rope = RotaryPositionalEmbedding(
                 theta, self.d_k, max_seq_len, device=device)
-            self.token_positions = token_positions
         self.q_proj_weight = Linear(
             d_model, num_heads * self.d_k, device=device, dtype=dtype)
         self.k_proj_weight = Linear(
@@ -132,6 +133,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, in_features: torch.Tensor) -> torch.Tensor:
         sequence_length = in_features.shape[-2]
+
         Q = self.q_proj_weight(in_features)  # (..., sequence_length, d_model)
         K = self.k_proj_weight(in_features)
         V = self.v_proj_weight(in_features)
@@ -148,6 +150,8 @@ class MultiHeadAttention(nn.Module):
 
         # Apply Rope to Q and K
         if self.with_rope:
+            if not self.token_positions:
+                self.token_positions = torch.arange(sequence_length)
             Q = self.rope(Q, self.token_positions)
             K = self.rope(K, self.token_positions)
 
@@ -163,3 +167,10 @@ class MultiHeadAttention(nn.Module):
         O = O.flatten(start_dim=-2)  # (..., sequence_length, d_v*num_heads)
 
         return self.o_proj_weight(O)  # (..., sequence_length, d_model)
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int, theta, device=None, dtype=None):
+        super().__init__()
+        self.attn = MultiHeadAttention(d_model, num_heads, device=device,
+                                       dtype=dtype, with_rope=True, theta=theta, max_seq_len=max_seq_len)
