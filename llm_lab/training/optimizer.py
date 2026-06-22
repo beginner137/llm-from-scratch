@@ -1,4 +1,20 @@
 import torch
+import math
+
+
+def gradient_clipping(parameters, max_l2_norm: float):
+    total = 0
+    for p in parameters:
+        if p.grad is not None:
+            total += torch.sum(p.grad ** 2)
+    grad_norm = torch.sqrt(total)
+    if grad_norm < max_l2_norm:
+        return parameters
+    scale = max_l2_norm / (grad_norm + 1e-6)
+    for p in parameters:
+        if p.grad is not None:
+            p.grad *= scale
+    return parameters
 
 
 class AdamW(torch.optim.Optimizer):
