@@ -1,5 +1,4 @@
 import torch
-import math
 
 
 def gradient_clipping(parameters, max_l2_norm: float):
