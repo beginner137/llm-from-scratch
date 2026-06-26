@@ -31,7 +31,7 @@ class Embedding(nn.Module):
         super().__init__()
         sigma = 1
         embedding = torch.empty(
-            num_embeddings, embedding_dim, device=None, dtype=None)
+            num_embeddings, embedding_dim, device=device, dtype=dtype)
         self.embedding = nn.Parameter(nn.init.trunc_normal_(
             embedding, mean=0, std=sigma, a=-3, b=3
         ))
@@ -150,14 +150,16 @@ class MultiHeadAttention(nn.Module):
 
         # Apply Rope to Q and K
         if self.with_rope:
-            if not self.token_positions:
-                self.token_positions = torch.arange(sequence_length)
-            Q = self.rope(Q, self.token_positions)
-            K = self.rope(K, self.token_positions)
+            if self.token_positions is None:
+                token_positions = torch.arange(sequence_length, device=Q.device)
+            else:
+                token_positions = self.token_positions.to(device=Q.device)
+            Q = self.rope(Q, token_positions)
+            K = self.rope(K, token_positions)
 
         # create a lower triangle mask
         causal_mask = torch.tril(torch.ones(
-            sequence_length, sequence_length), diagonal=0).bool()
+            sequence_length, sequence_length, device=Q.device), diagonal=0).bool()
 
         # (..., num_heads, sequence_length, d_v)
         O = scaled_dot_product_attention(Q, K, V, causal_mask)

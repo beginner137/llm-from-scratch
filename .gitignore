@@ -170,3 +170,7 @@ llm_lab/data/
 # Local outputs
 outputs/
 llm_lab/outputs/
+
+# Local snapshots
+checkpoints/
+llm_lab/checkpoints
