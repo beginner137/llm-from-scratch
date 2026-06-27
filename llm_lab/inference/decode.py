@@ -1,8 +1,15 @@
 import argparse
+import torch
+
+from llm_lab.model.layers import TransformerLM
+from llm_lab.model.functional import softmax
+from llm_lab.training.checkpoint import load_checkpoint_dict
+from llm_lab.tokenizer.tokenizer import Tokenizer
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate text from a trained Transformer LM")
+    parser = argparse.ArgumentParser(
+        description="Generate text from a trained Transformer LM")
 
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--vocab", type=str, required=True)
@@ -17,17 +24,71 @@ def parse_args():
     return parser.parse_args()
 
 
+def apply_top_k(logits: torch.Tensor, top_k: int | None) -> torch.Tensor:
+    if top_k is None:
+        return logits
+
+    if top_k <= 0:
+        raise ValueError("top_k must be positive or None")
+
+    top_k = min(top_k, logits.shape[-1])
+    values, _ = torch.topk(logits, k=top_k, dim=-1)
+    threshold = values[..., -1, None]
+
+    return logits.masked_fill(logits < threshold, float("-inf"))
+
+
 def main():
     args = parse_args()
+    checkpoint = load_checkpoint_dict(
+        args.checkpoint, map_location=args.device)
+    config = checkpoint.get("config")
+    if config is None:
+        raise ValueError(
+            "Checkpoint does not contain config. Resume training from this checkpoint "
+            "with the updated training script and save a new checkpoint first."
+        )
 
-    # TODO: load tokenizer from args.vocab and args.merges.
-    # TODO: load checkpoint dict and read checkpoint["config"].
+    tokenizer = Tokenizer.from_files(
+        args.vocab,
+        args.merges,
+        special_tokens=["<|endoftext|>"]
+    )
+
     # TODO: construct TransformerLM with the model hyperparameters from config.
-    # TODO: load checkpoint["model"] into the model.
-    # TODO: encode args.prompt into token ids.
-    # TODO: generate args.max_new_tokens using logits from the final position.
-    # TODO: decode generated token ids back into text and print.
-    print(args)
+    model = TransformerLM(
+        vocab_size=config["vocab_size"],
+        context_length=config["context_length"],
+        d_model=config["d_model"],
+        num_layers=config["num_layers"],
+        num_heads=config["num_heads"],
+        d_ff=config["d_ff"],
+        rope_theta=config["rope_theta"],
+        device=args.device,
+    )
+
+    model.load_state_dict(checkpoint["model"])
+    model.eval()
+
+    tokens = tokenizer.encode(args.prompt)
+    with torch.no_grad():
+        for _ in range(args.max_new_tokens):
+            input_window = tokens[-config["context_length"]:]
+            input_tensor = torch.tensor(
+                input_window,
+                dtype=torch.long,
+                device=args.device
+            ).unsqueeze(0)
+            logits = model(input_tensor)  # [1, sequence_length, vocab_size]
+            next_logits = logits[:, -1, :]
+            next_logits = apply_top_k(next_logits, args.top_k)
+            probabilities = softmax(next_logits, dim=-1,
+                                    temperature=args.temperature)
+            next_token = torch.multinomial(probabilities, num_samples=1)
+            tokens.append(next_token.item())
+
+    print(tokenizer.decode(tokens))
+    return
 
 
 if __name__ == "__main__":

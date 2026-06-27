@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import math
 
+from llm_lab.model.functional import softmax
+
 
 class Linear(nn.Module):
     def __init__(self, in_features, out_features, device=None, dtype=None):
@@ -94,12 +96,6 @@ class RotaryPositionalEmbedding(nn.Module):
         out[..., 0::2] = x_even_rot
         out[..., 1::2] = x_odd_rot
         return out
-
-
-def softmax(x: torch.Tensor, dim: int):
-    shifted = x - x.max(dim=dim, keepdim=True).values
-    exp = torch.exp(shifted)
-    return exp / exp.sum(dim=dim, keepdim=True)
 
 
 def scaled_dot_product_attention(Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
