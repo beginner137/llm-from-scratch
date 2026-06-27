@@ -92,6 +92,7 @@ def main():
     model.eval()
 
     tokens = tokenizer.encode(args.prompt)
+    eos_id = tokenizer._token_to_id[b"<|endoftext|>"]
     with torch.no_grad():
         for _ in range(args.max_new_tokens):
             input_window = tokens[-config["context_length"]:]
@@ -107,6 +108,9 @@ def main():
             probabilities = softmax(next_logits, dim=-1,
                                     temperature=args.temperature)
             next_token = torch.multinomial(probabilities, num_samples=1)
+            next_token_id = next_token.item()
+            if next_token_id == eos_id:
+                break
             tokens.append(next_token.item())
 
     print(tokenizer.decode(tokens))
