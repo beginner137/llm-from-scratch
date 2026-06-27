@@ -118,7 +118,7 @@ def main():
 
         if args.checkpoint_path is not None and completed_step % args.save_interval == 0:
             out = checkpoint_output_path(args.checkpoint_path, completed_step)
-            save_checkpoint(model, optimizer, completed_step, out)
+            save_checkpoint(model, optimizer, completed_step, out, config=vars(args))
             print(f"step {completed_step}: saved checkpoint to {out}")
 
 
