@@ -19,6 +19,7 @@ def parse_args():
     parser.add_argument("--max-new-tokens", type=int, default=100)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top-k", type=int, default=None)
+    parser.add_argument("--top-p", type=float, default=None)
     parser.add_argument("--device", type=str, default="cpu")
 
     return parser.parse_args()
@@ -36,6 +37,26 @@ def apply_top_k(logits: torch.Tensor, top_k: int | None) -> torch.Tensor:
     threshold = values[..., -1, None]
 
     return logits.masked_fill(logits < threshold, float("-inf"))
+
+
+def apply_top_p(logits: torch.Tensor, top_p: float | None) -> torch.Tensor:
+    if top_p is None:
+        return logits
+
+    if top_p <= 0 or top_p > 1:
+        raise ValueError("top_p must be in (0, 1] or None")
+
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+    sorted_probs = softmax(sorted_logits, dim=-1)
+    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+
+    sorted_remove = cumulative_probs > top_p
+    sorted_remove[..., 1:] = sorted_remove[..., :-1].clone()
+    sorted_remove[..., 0] = False
+
+    remove = torch.zeros_like(sorted_remove)
+    remove.scatter_(dim=-1, index=sorted_indices, src=sorted_remove)
+    return logits.masked_fill(remove, float("-inf"))
 
 
 def main():
@@ -82,6 +103,7 @@ def main():
             logits = model(input_tensor)  # [1, sequence_length, vocab_size]
             next_logits = logits[:, -1, :]
             next_logits = apply_top_k(next_logits, args.top_k)
+            next_logits = apply_top_p(next_logits, args.top_p)
             probabilities = softmax(next_logits, dim=-1,
                                     temperature=args.temperature)
             next_token = torch.multinomial(probabilities, num_samples=1)
