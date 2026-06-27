@@ -176,4 +176,4 @@ checkpoints/
 llm_lab/checkpoints
 
 # Assignment tests
-tests/
+tests*/
