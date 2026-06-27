@@ -174,3 +174,6 @@ llm_lab/outputs/
 # Local snapshots
 checkpoints/
 llm_lab/checkpoints
+
+# Assignment tests
+tests/

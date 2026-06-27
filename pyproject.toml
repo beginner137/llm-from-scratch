@@ -1,7 +1,7 @@
 [project]
 name = "llb_lab"
 version = "1.0.6"
-description = "CS336 Assignment 1"
+description = "LLM LAB"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
