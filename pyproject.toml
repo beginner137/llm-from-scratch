@@ -1,5 +1,5 @@
 [project]
-name = "llb_lab"
+name = "llm_lab"
 version = "1.0.6"
 description = "LLM LAB"
 readme = "README.md"
