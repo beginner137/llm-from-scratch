@@ -5,6 +5,7 @@ import timeit
 import torch
 
 from llm_lab.model.layers import TransformerLM
+from llm_lab.systems.benchmarks.nvtx import benchmark_nvtx_range, install_nvtx_attention
 from llm_lab.training.losses import cross_entropy
 from llm_lab.training.optimizer import AdamW, gradient_clipping
 
@@ -62,6 +63,7 @@ def make_batch(vocab_size, batch_size, context_length, device):
 
 
 def make_model(args):
+    install_nvtx_attention()
     return TransformerLM(
         vocab_size=args.vocab_size,
         context_length=args.context_length,
@@ -138,7 +140,8 @@ def main():
     synchronize(args.device)
 
     timer = timeit.Timer(step)
-    repeat_times = timer.repeat(repeat=args.repeats, number=args.iters)
+    with benchmark_nvtx_range("benchmark"):
+        repeat_times = timer.repeat(repeat=args.repeats, number=args.iters)
     per_iter = [elapsed / args.iters for elapsed in repeat_times]
 
     tokens_per_iter = args.batch_size * args.context_length
