@@ -1,5 +1,6 @@
 import argparse
 import contextlib
+from pathlib import Path
 import statistics
 import timeit
 from collections.abc import Iterator
@@ -28,6 +29,9 @@ def parse_args():
     parser.add_argument("--model-size", choices=["custom", *MODEL_SIZES], default="custom")
     parser.add_argument("--precision", choices=["full", "fp16-mixed", "bf16-mixed"], default="full")
     parser.add_argument("--compare-precision", action="store_true")
+    parser.add_argument("--record-memory-history", action="store_true")
+    parser.add_argument("--memory-profile-dir", type=Path, default=Path("profiles/nsight"))
+    parser.add_argument("--memory-history-max-entries", type=int, default=1_000_000)
 
     parser.add_argument("--vocab-size", type=int, default=10000)
     parser.add_argument("--context-length", type=int, default=256)
@@ -161,6 +165,24 @@ def make_step(args, model, optimizer, inputs, targets):
     raise ValueError(f"Unsupported benchmark mode: {args.mode}")
 
 
+@contextlib.contextmanager
+def cuda_memory_history(args, label: str) -> Iterator[Path | None]:
+    if not args.record_memory_history:
+        yield None
+        return
+    if not args.device.startswith("cuda") or not torch.cuda.is_available():
+        raise RuntimeError("--record-memory-history requires a CUDA device")
+
+    args.memory_profile_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = args.memory_profile_dir / f"memory_snapshot_{label}.pickle"
+    torch.cuda.memory._record_memory_history(max_entries=args.memory_history_max_entries)
+    try:
+        yield snapshot_path
+    finally:
+        torch.cuda.memory._dump_snapshot(str(snapshot_path))
+        torch.cuda.memory._record_memory_history(enabled=None)
+
+
 def run_benchmark(args):
     apply_model_size(args)
     torch.manual_seed(args.seed)
@@ -185,7 +207,9 @@ def run_benchmark(args):
 
     timer = timeit.Timer(step)
     with benchmark_nvtx_range("benchmark"):
-        repeat_times = timer.repeat(repeat=args.repeats, number=args.iters)
+        memory_label = f"{args.model_size}_{args.mode}_{args.precision}"
+        with cuda_memory_history(args, memory_label) as memory_snapshot_path:
+            repeat_times = timer.repeat(repeat=args.repeats, number=args.iters)
     per_iter = [elapsed / args.iters for elapsed in repeat_times]
 
     tokens_per_iter = args.batch_size * args.context_length
@@ -213,6 +237,8 @@ def run_benchmark(args):
     print(f"stdev: {stdev * 1000:.3f} ms")
     print(f"best throughput: {tokens_per_iter / best:.1f} tokens/s")
     print(f"mean throughput: {tokens_per_iter / mean:.1f} tokens/s")
+    if memory_snapshot_path is not None:
+        print(f"memory snapshot: {memory_snapshot_path}")
     return {
         "best": best,
         "mean": mean,
