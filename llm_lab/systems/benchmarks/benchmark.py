@@ -1,6 +1,8 @@
 import argparse
+import contextlib
 import statistics
 import timeit
+from collections.abc import Iterator
 
 import torch
 
@@ -10,10 +12,22 @@ from llm_lab.training.losses import cross_entropy
 from llm_lab.training.optimizer import AdamW, gradient_clipping
 
 
+MODEL_SIZES = {
+    "small": {"d_model": 768, "d_ff": 3072, "num_layers": 12, "num_heads": 12},
+    "medium": {"d_model": 1024, "d_ff": 4096, "num_layers": 24, "num_heads": 16},
+    "large": {"d_model": 1280, "d_ff": 5120, "num_layers": 36, "num_heads": 20},
+    "xl": {"d_model": 2560, "d_ff": 10240, "num_layers": 32, "num_heads": 32},
+    "10B": {"d_model": 4608, "d_ff": 12288, "num_layers": 50, "num_heads": 36},
+}
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark TransformerLM training/inference paths")
 
     parser.add_argument("--mode", choices=["forward", "backward", "train-step"], default="forward")
+    parser.add_argument("--model-size", choices=["custom", *MODEL_SIZES], default="custom")
+    parser.add_argument("--precision", choices=["full", "fp16-mixed", "bf16-mixed"], default="full")
+    parser.add_argument("--compare-precision", action="store_true")
 
     parser.add_argument("--vocab-size", type=int, default=10000)
     parser.add_argument("--context-length", type=int, default=256)
@@ -35,6 +49,34 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=0)
 
     return parser.parse_args()
+
+
+def apply_model_size(args):
+    if args.model_size == "custom":
+        return
+    for name, value in MODEL_SIZES[args.model_size].items():
+        setattr(args, name, value)
+
+
+def device_type(device: str) -> str:
+    return device.split(":", maxsplit=1)[0]
+
+
+@contextlib.contextmanager
+def precision_context(args) -> Iterator[None]:
+    mixed_precision_dtypes = {
+        "fp16-mixed": torch.float16,
+        "bf16-mixed": torch.bfloat16,
+    }
+    if args.precision == "bf16-mixed":
+        with torch.amp.autocast(device_type=device_type(args.device), dtype=mixed_precision_dtypes[args.precision]):
+            yield
+    elif args.precision == "fp16-mixed":
+        with torch.amp.autocast(device_type=device_type(args.device), dtype=mixed_precision_dtypes[args.precision]):
+            yield
+    else:
+        with contextlib.nullcontext():
+            yield
 
 
 def synchronize(device: str):
@@ -81,7 +123,7 @@ def make_step(args, model, optimizer, inputs, targets):
         model.eval()
 
         def step():
-            with torch.no_grad():
+            with torch.no_grad(), precision_context(args):
                 model(inputs)
             synchronize(args.device)
 
@@ -92,8 +134,9 @@ def make_step(args, model, optimizer, inputs, targets):
 
         def step():
             optimizer.zero_grad(set_to_none=True)
-            logits = model(inputs)
-            loss = cross_entropy(logits, targets)
+            with precision_context(args):
+                logits = model(inputs)
+                loss = cross_entropy(logits.float(), targets)
             loss.backward()
             synchronize(args.device)
 
@@ -104,8 +147,9 @@ def make_step(args, model, optimizer, inputs, targets):
 
         def step():
             optimizer.zero_grad(set_to_none=True)
-            logits = model(inputs)
-            loss = cross_entropy(logits, targets)
+            with precision_context(args):
+                logits = model(inputs)
+                loss = cross_entropy(logits.float(), targets)
             loss.backward()
             if args.grad_clip is not None:
                 gradient_clipping(model.parameters(), args.grad_clip)
@@ -117,8 +161,8 @@ def make_step(args, model, optimizer, inputs, targets):
     raise ValueError(f"Unsupported benchmark mode: {args.mode}")
 
 
-def main():
-    args = parse_args()
+def run_benchmark(args):
+    apply_model_size(args)
     torch.manual_seed(args.seed)
 
     model = make_model(args)
@@ -149,10 +193,17 @@ def main():
     mean = statistics.mean(per_iter)
     stdev = statistics.stdev(per_iter) if len(per_iter) > 1 else 0.0
 
+    print(f"model_size: {args.model_size}")
     print(f"mode: {args.mode}")
+    print(f"precision: {args.precision}")
     print(f"device: {args.device}")
+    print(f"vocab_size: {args.vocab_size}")
     print(f"batch_size: {args.batch_size}")
     print(f"context_length: {args.context_length}")
+    print(f"d_model: {args.d_model}")
+    print(f"d_ff: {args.d_ff}")
+    print(f"num_layers: {args.num_layers}")
+    print(f"num_heads: {args.num_heads}")
     print(f"tokens/iter: {tokens_per_iter}")
     print(f"warmups: {args.warmups}")
     print(f"iters/repeat: {args.iters}")
@@ -162,6 +213,34 @@ def main():
     print(f"stdev: {stdev * 1000:.3f} ms")
     print(f"best throughput: {tokens_per_iter / best:.1f} tokens/s")
     print(f"mean throughput: {tokens_per_iter / mean:.1f} tokens/s")
+    return {
+        "best": best,
+        "mean": mean,
+        "stdev": stdev,
+        "tokens_per_iter": tokens_per_iter,
+    }
+
+
+def main():
+    args = parse_args()
+    if args.compare_precision:
+        results = {}
+        for precision in ("full", "fp16-mixed", "bf16-mixed"):
+            run_args = argparse.Namespace(**vars(args))
+            run_args.precision = precision
+            print(f"--- {precision} ---")
+            results[precision] = run_benchmark(run_args)
+
+        full_mean = results["full"]["mean"]
+        print("--- comparison ---")
+        print(f"mean full: {full_mean * 1000:.3f} ms")
+        for precision in ("fp16-mixed", "bf16-mixed"):
+            mixed_mean = results[precision]["mean"]
+            speedup = full_mean / mixed_mean
+            print(f"mean {precision}: {mixed_mean * 1000:.3f} ms")
+            print(f"{precision} speedup: {speedup:.3f}x")
+    else:
+        run_benchmark(args)
 
 
 if __name__ == "__main__":
