@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--context-length", type=int, default=512)
     parser.add_argument("--hidden-size", type=int, default=2560)
+    parser.add_argument("--compile", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
 
@@ -58,6 +59,12 @@ def main():
         requires_grad=True,
     )
     ln = RMSNorm(x.shape[-1], device=args.device)
+    if args.compile:
+        ln = torch.compile(ln)
+
+    print(f"device: {args.device}")
+    print(f"shape: {tuple(x.shape)}")
+    print(f"compile: {args.compile}")
 
     with torch.autograd.graph.saved_tensors_hooks(pack_hook, unpack_hook):
         y = ln(x)
